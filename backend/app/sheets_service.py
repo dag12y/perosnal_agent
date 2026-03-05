@@ -14,6 +14,28 @@ creds = Credentials.from_service_account_file(
 
 client = gspread.authorize(creds)
 sheet = client.open(SHEET_NAME).sheet1
+BUDGET_SHEET_TITLE = "Budgets"
+BUDGET_HEADERS = ["ChatId", "Category", "Amount", "UpdatedAt"]
+
+
+def _normalize_category(value: str) -> str:
+    return str(value).strip().lower()
+
+
+def _get_or_create_budget_sheet():
+    workbook = client.open(SHEET_NAME)
+    try:
+        ws = workbook.worksheet(BUDGET_SHEET_TITLE)
+    except gspread.WorksheetNotFound:
+        ws = workbook.add_worksheet(title=BUDGET_SHEET_TITLE, rows=1000, cols=4)
+
+    first_row = ws.row_values(1)
+    if first_row != BUDGET_HEADERS:
+        ws.update("A1:D1", [BUDGET_HEADERS])
+    return ws
+
+
+budget_sheet = _get_or_create_budget_sheet()
 
 
 def add_expense(category: str, amount: float, description: str = ""):
@@ -141,3 +163,57 @@ def get_weekly_report():
         "current_end": current_end.strftime("%Y-%m-%d"),
         "top_category": top_category,
     }
+
+
+def set_user_budget(chat_id: int, category: str, amount: float):
+    records = budget_sheet.get_all_records()
+    target_chat = str(chat_id)
+    target_category = _normalize_category(category)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    found_row = None
+    for idx, row in enumerate(records, start=2):
+        row_chat = str(row.get("ChatId", "")).strip()
+        row_category = _normalize_category(row.get("Category", ""))
+        if row_chat == target_chat and row_category == target_category:
+            found_row = idx
+            break
+
+    if found_row is None:
+        budget_sheet.append_row([target_chat, category, amount, now])
+    else:
+        budget_sheet.update(
+            f"A{found_row}:D{found_row}",
+            [[target_chat, category, amount, now]],
+        )
+
+
+def get_user_budgets(chat_id: int):
+    records = budget_sheet.get_all_records()
+    target_chat = str(chat_id)
+    budgets = {}
+
+    for row in records:
+        row_chat = str(row.get("ChatId", "")).strip()
+        if row_chat != target_chat:
+            continue
+
+        category = str(row.get("Category", "")).strip()
+        if not category:
+            continue
+
+        normalized = _normalize_category(category)
+        budgets[normalized] = {
+            "category": category,
+            "amount": _to_float(row.get("Amount", 0)),
+        }
+
+    return budgets
+
+
+def get_user_budget(chat_id: int, category: str):
+    budgets = get_user_budgets(chat_id)
+    data = budgets.get(_normalize_category(category))
+    if not data:
+        return None
+    return data["amount"]

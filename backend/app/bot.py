@@ -6,12 +6,14 @@ from app.sheets_service import (
     get_balance_summary,
     get_current_month_category_expense,
     get_monthly_summary,
+    get_user_budget,
+    get_user_budgets,
     get_weekly_report,
+    set_user_budget,
 )
 
 # Temporary storage for user inputs
 user_data = {}
-user_budgets = {}
 budget_alert_state = {}
 
 CATEGORIES = ["Food", "Transport", "Coffee", "Shopping", "Other", "Income"]
@@ -56,8 +58,7 @@ async def _send_budget_alert_if_needed(chat_id: int, category: str, message):
     if normalized_category == "income":
         return
 
-    budgets = user_budgets.get(chat_id, {})
-    budget = budgets.get(normalized_category)
+    budget = get_user_budget(chat_id, normalized_category)
     if not budget:
         return
 
@@ -228,9 +229,7 @@ async def set_budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text("Amount must be a positive number.")
         return
 
-    if chat_id not in user_budgets:
-        user_budgets[chat_id] = {}
-    user_budgets[chat_id][category] = amount
+    set_user_budget(chat_id, _display_category(category), amount)
 
     await message.reply_text(
         f"Budget set ✅ {_display_category(category)}: {amount:.2f} ETB for this month."
@@ -243,7 +242,7 @@ async def list_budgets(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if message is None or chat_id is None:
         return
 
-    budgets = user_budgets.get(chat_id, {})
+    budgets = get_user_budgets(chat_id)
 
     if not budgets:
         await message.reply_text(
@@ -252,8 +251,9 @@ async def list_budgets(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     response = "🎯 Budget Status (current month):\n"
-    for category_key, budget in budgets.items():
-        category_name = _display_category(category_key)
+    for category_key, budget_data in budgets.items():
+        category_name = _display_category(budget_data["category"] or category_key)
+        budget = budget_data["amount"]
         spent = get_current_month_category_expense(category_name)
         percent = (spent / budget) * 100 if budget > 0 else 0
         response += (
