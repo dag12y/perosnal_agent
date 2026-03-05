@@ -1,6 +1,6 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from app.sheets_service import add_expense, get_monthly_summary
+from telegram.ext import ContextTypes
+from app.sheets_service import add_expense, get_balance_summary, get_monthly_summary
 
 # Temporary storage for user inputs
 user_data = {}
@@ -11,7 +11,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data[chat_id] = {"category": None, "amount": None, "description": None}
 
     # Category buttons
-    categories = ["Food", "Transport", "Coffee", "Shopping", "Other"]
+    categories = ["Food", "Transport", "Coffee", "Shopping", "Other", "Income"]
     keyboard = [[InlineKeyboardButton(cat, callback_data=cat)] for cat in categories]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -41,10 +41,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = user_data[chat_id]
 
+    if data["category"] is None:
+        await update.message.reply_text("Choose a category first from /start.")
+        return
+
     # Step 3a: Enter amount
     if data["amount"] is None:
         try:
             amount = float(text)
+            if amount <= 0:
+                await update.message.reply_text("Amount must be greater than 0.")
+                return
             data["amount"] = amount
             await update.message.reply_text("Enter description (optional, or type '-' to skip):")
         except ValueError:
@@ -71,28 +78,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Step 4: Monthly summary
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     summary_data = get_monthly_summary()
-    if not summary_data:
-        await update.message.reply_text("No expenses this month.")
-        return
+    expenses_by_category = summary_data["expenses_by_category"]
+    total_income = summary_data["total_income"]
+    total_expense = summary_data["total_expense"]
+    net_balance = summary_data["net_balance"]
 
     response = "📊 Monthly Summary:\n"
-    for category, total in summary_data.items():
-        response += f"{category}: {total} ETB\n"
+    if expenses_by_category:
+        response += "\nExpenses by category:\n"
+        for category, total in expenses_by_category.items():
+            response += f"- {category}: {total:.2f} ETB\n"
+    else:
+        response += "\nNo expenses recorded this month.\n"
+
+    response += f"\nTotal Income: {total_income:.2f} ETB\n"
+    response += f"Total Expense: {total_expense:.2f} ETB\n"
+    response += f"Net Balance: {net_balance:.2f} ETB"
 
     await update.message.reply_text(response)
 
-# Setup application
-def main():
-    from app.config import TELEGRAM_TOKEN
 
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("summary", summary))
-    app.add_handler(CallbackQueryHandler(category_chosen))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    balance_data = get_balance_summary()
+    response = (
+        "💰 Balance Overview:\n"
+        f"Total Income: {balance_data['total_income']:.2f} ETB\n"
+        f"Total Expense: {balance_data['total_expense']:.2f} ETB\n"
+        f"Net Balance: {balance_data['net_balance']:.2f} ETB"
+    )
+    await update.message.reply_text(response)

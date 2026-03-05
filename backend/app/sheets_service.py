@@ -20,9 +20,16 @@ def add_expense(category: str, amount: float, description: str = ""):
     date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sheet.append_row([date, category, amount, description])
 
+
+def _is_income(category: str) -> bool:
+    return str(category).strip().lower() == "income"
+
+
 def get_monthly_summary():
     records = sheet.get_all_records()
-    summary = {}
+    expenses_by_category = {}
+    total_income = 0.0
+    total_expense = 0.0
 
     current_month = datetime.now().strftime("%Y-%m")
 
@@ -30,6 +37,36 @@ def get_monthly_summary():
         if row["Date"].startswith(current_month):
             category = row["Category"]
             amount = float(row["Amount"])
-            summary[category] = summary.get(category, 0) + amount
+            if _is_income(category):
+                total_income += amount
+            else:
+                total_expense += amount
+                expenses_by_category[category] = expenses_by_category.get(category, 0) + amount
 
-    return summary
+    return {
+        "expenses_by_category": expenses_by_category,
+        "total_income": total_income,
+        "total_expense": total_expense,
+        "net_balance": total_income - total_expense,
+    }
+
+
+def get_balance_summary():
+    records = sheet.get_all_records()
+
+    total_income = 0.0
+    total_expense = 0.0
+
+    for row in records:
+        category = row.get("Category", "")
+        amount = float(row.get("Amount", 0) or 0)
+        if _is_income(category):
+            total_income += amount
+        else:
+            total_expense += amount
+
+    return {
+        "total_income": total_income,
+        "total_expense": total_expense,
+        "net_balance": total_income - total_expense,
+    }
