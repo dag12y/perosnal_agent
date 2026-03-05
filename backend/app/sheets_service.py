@@ -16,10 +16,9 @@ client = gspread.authorize(creds)
 sheet = client.open(SHEET_NAME).sheet1
 
 
-def add_expense(category: str, amount: float):
+def add_expense(category: str, amount: float, description: str = ""):
     date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    sheet.append_row([date, category, amount])
-
+    sheet.append_row([date, category, amount, description])
 
 def get_monthly_summary():
     records = sheet.get_all_records()
